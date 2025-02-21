@@ -119,3 +119,85 @@
              approved: false})
         (var-set proposal-counter (+ proposal-id u1))
         (ok proposal-id)))
+
+
+
+;; Add these definitions
+(define-map budget-categories 
+    principal 
+    (string-ascii 20))
+
+(define-public (set-budget-category (project principal) (category (string-ascii 20)))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set budget-categories project category)
+        (ok true)))
+
+
+
+;; Add these definitions
+(define-map spending-limits principal uint)
+(define-constant ERR-LIMIT-EXCEEDED (err u104))
+
+(define-public (set-spending-limit (project principal) (limit uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set spending-limits project limit)
+        (ok true)))
+
+
+
+;; Add these definitions
+(define-map budget-history
+    {project: principal, timestamp: uint}
+    {action: (string-ascii 20), amount: uint})
+(define-data-var history-counter uint u0)
+
+(define-public (log-budget-action (action (string-ascii 20)) (amount uint))
+    (begin
+        (map-set budget-history 
+            {project: tx-sender, timestamp: block-height}
+            {action: action, amount: amount})
+        (var-set history-counter (+ (var-get history-counter) u1))
+        (ok true)))
+
+
+
+;; Add these definitions
+(define-map project-milestones
+    principal
+    {target: uint, achieved: bool})
+
+(define-public (set-milestone (project principal) (target uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set project-milestones project {target: target, achieved: false})
+        (ok true)))
+
+
+
+;; Add these definitions
+(define-map budget-alerts
+    principal
+    {threshold: uint, triggered: bool})
+(define-constant ALERT-THRESHOLD u80)
+
+(define-public (set-budget-alert (threshold uint))
+    (begin
+        (map-set budget-alerts tx-sender 
+            {threshold: threshold, triggered: false})
+        (ok true)))
+
+
+
+;; Add these definitions
+(define-map performance-rewards
+    principal
+    {bonus: uint, claimed: bool})
+(define-constant PERFORMANCE-THRESHOLD u90)
+
+(define-public (claim-performance-reward)
+    (let ((project-data (unwrap! (get-project-budget tx-sender) ERR-NOT-AUTHORIZED)))
+        (asserts! (>= (get performance-score project-data) PERFORMANCE-THRESHOLD) ERR-NOT-AUTHORIZED)
+        (map-set performance-rewards tx-sender {bonus: u100, claimed: true})
+        (ok true)))
