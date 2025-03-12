@@ -119,3 +119,198 @@
              approved: false})
         (var-set proposal-counter (+ proposal-id u1))
         (ok proposal-id)))
+
+
+
+;; Add these definitions
+(define-map budget-categories 
+    principal 
+    (string-ascii 20))
+
+(define-public (set-budget-category (project principal) (category (string-ascii 20)))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set budget-categories project category)
+        (ok true)))
+
+
+
+;; Add these definitions
+(define-map spending-limits principal uint)
+(define-constant ERR-LIMIT-EXCEEDED (err u104))
+
+(define-public (set-spending-limit (project principal) (limit uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set spending-limits project limit)
+        (ok true)))
+
+
+
+;; Add these definitions
+(define-map budget-history
+    {project: principal, timestamp: uint}
+    {action: (string-ascii 20), amount: uint})
+(define-data-var history-counter uint u0)
+
+(define-public (log-budget-action (action (string-ascii 20)) (amount uint))
+    (begin
+        (map-set budget-history 
+            {project: tx-sender, timestamp: block-height}
+            {action: action, amount: amount})
+        (var-set history-counter (+ (var-get history-counter) u1))
+        (ok true)))
+
+
+
+;; Add these definitions
+(define-map project-milestones
+    principal
+    {target: uint, achieved: bool})
+
+(define-public (set-milestone (project principal) (target uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set project-milestones project {target: target, achieved: false})
+        (ok true)))
+
+
+
+;; Add these definitions
+(define-map budget-alerts
+    principal
+    {threshold: uint, triggered: bool})
+(define-constant ALERT-THRESHOLD u80)
+
+(define-public (set-budget-alert (threshold uint))
+    (begin
+        (map-set budget-alerts tx-sender 
+            {threshold: threshold, triggered: false})
+        (ok true)))
+
+
+
+;; Add these definitions
+(define-map performance-rewards
+    principal
+    {bonus: uint, claimed: bool})
+(define-constant PERFORMANCE-THRESHOLD u90)
+
+(define-public (claim-performance-reward)
+    (let ((project-data (unwrap! (get-project-budget tx-sender) ERR-NOT-AUTHORIZED)))
+        (asserts! (>= (get performance-score project-data) PERFORMANCE-THRESHOLD) ERR-NOT-AUTHORIZED)
+        (map-set performance-rewards tx-sender {bonus: u100, claimed: true})
+        (ok true)))
+
+
+
+;; Add at the top with other data maps
+(define-map vesting-schedules
+    principal
+    {total-amount: uint, 
+     release-interval: uint,
+     amount-per-release: uint,
+     last-release: uint})
+
+(define-public (create-vesting-schedule (project principal) (total uint) (interval uint) (amount-per uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set vesting-schedules project 
+            {total-amount: total,
+             release-interval: interval,
+             amount-per-release: amount-per,
+             last-release: block-height})
+        (ok true)))
+
+
+(define-map budget-votes 
+    uint 
+    {yes-votes: uint, no-votes: uint})
+
+(define-data-var min-votes-required uint u3)
+
+(define-public (vote-on-budget (proposal-id uint) (vote bool))
+    (let ((current-votes (default-to {yes-votes: u0, no-votes: u0} 
+                         (map-get? budget-votes proposal-id))))
+        (map-set budget-votes proposal-id
+            (if vote
+                {yes-votes: (+ (get yes-votes current-votes) u1), 
+                 no-votes: (get no-votes current-votes)}
+                {yes-votes: (get yes-votes current-votes), 
+                 no-votes: (+ (get no-votes current-votes) u1)}))
+        (ok true)))
+
+
+
+
+(define-map budget-delegates
+    principal
+    {delegate: principal, active: bool})
+
+(define-public (delegate-budget-control (to principal))
+    (begin
+        (map-set budget-delegates tx-sender 
+            {delegate: to, active: true})
+        (ok true)))
+
+
+(define-map project-tags
+    principal
+    (list 10 (string-ascii 20)))
+
+(define-public (add-project-tags (tags (list 10 (string-ascii 20))))
+    (begin
+        (map-set project-tags tx-sender tags)
+        (ok true)))
+
+
+(define-map reporting-periods
+    principal
+    {start-block: uint,
+     end-block: uint,
+     target-spending: uint,
+     actual-spending: uint})
+
+(define-public (start-reporting-period (duration uint) (target uint))
+    (begin
+        (map-set reporting-periods tx-sender
+            {start-block: block-height,
+             end-block: (+ block-height duration),
+             target-spending: target,
+             actual-spending: u0})
+        (ok true)))
+
+
+(define-map multi-sig-requirements
+    principal
+    {required-signatures: uint,
+     signers: (list 5 principal),
+     signatures: uint})
+
+(define-public (setup-multisig (project principal) (required uint) (signers (list 5 principal)))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set multi-sig-requirements project
+            {required-signatures: required,
+             signers: signers,
+             signatures: u0})
+        (ok true)))
+
+
+
+(define-constant RECLAIM-PERIOD u50)
+(define-map unused-funds
+    principal
+    {last-activity: uint,
+     reclaimable-amount: uint})
+
+(define-public (mark-funds-reclaimable (project principal))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (let ((project-budget (unwrap! (get-project-budget project) ERR-NOT-AUTHORIZED)))
+            (map-set unused-funds project
+                {last-activity: block-height,
+                 reclaimable-amount: (get balance project-budget)})
+            (ok true))))
+
+
