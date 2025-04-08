@@ -314,3 +314,205 @@
             (ok true))))
 
 
+(define-constant REALLOCATION-THRESHOLD u50)
+
+(define-public (reallocate-low-performing-budgets)
+    (let ((project-budget (unwrap! (get-project-budget tx-sender) ERR-NOT-AUTHORIZED)))
+        (asserts! (< (get performance-score project-budget) REALLOCATION-THRESHOLD) ERR-NOT-AUTHORIZED)
+        (var-set treasury-balance (+ (var-get treasury-balance) (get balance project-budget)))
+        (map-set budgets tx-sender 
+            {balance: u0, performance-score: (get performance-score project-budget)})
+        (ok true)))
+
+
+
+(define-map budget-increase-requests 
+    principal 
+    {amount: uint, reason: (string-ascii 50), status: bool})
+
+(define-public (request-budget-increase (amount uint) (reason (string-ascii 50)))
+    (begin
+        (map-set budget-increase-requests tx-sender 
+            {amount: amount, reason: reason, status: false})
+        (ok true)))
+
+
+
+(define-map budget-analytics
+    principal
+    {total-spent: uint, last-active: uint, transaction-count: uint})
+
+(define-public (record-budget-usage (amount uint))
+    (let ((current-analytics (default-to {total-spent: u0, last-active: u0, transaction-count: u0} 
+                            (map-get? budget-analytics tx-sender))))
+        (map-set budget-analytics tx-sender
+            {total-spent: (+ (get total-spent current-analytics) amount),
+             last-active: block-height,
+             transaction-count: (+ (get transaction-count current-analytics) u1)})
+        (ok true)))
+
+
+
+
+(define-map frozen-budgets principal bool)
+
+(define-public (freeze-budget (project principal))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set frozen-budgets project true)
+        (ok true)))
+
+(define-public (unfreeze-budget (project principal))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set frozen-budgets project false)
+        (ok true)))
+
+
+
+(define-public (merge-budgets (from-project principal) (to-project principal))
+    (let ((from-budget (unwrap! (get-project-budget from-project) ERR-NOT-AUTHORIZED))
+          (to-budget (unwrap! (get-project-budget to-project) ERR-NOT-AUTHORIZED)))
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set budgets to-project 
+            {balance: (+ (get balance from-budget) (get balance to-budget)),
+             performance-score: (get performance-score to-budget)})
+        (map-set budgets from-project 
+            {balance: u0, performance-score: u0})
+        (ok true)))
+
+
+
+(define-map budget-priorities 
+    principal 
+    {level: uint, last-updated: uint})
+
+(define-public (set-budget-priority (project principal) (priority-level uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set budget-priorities project 
+            {level: priority-level, last-updated: block-height})
+        (ok true)))
+
+
+
+(define-constant DISTRIBUTION-CYCLE u100)
+(define-map distribution-schedule
+    principal
+    {amount: uint, cycle: uint, last-distribution: uint})
+
+(define-public (setup-auto-distribution (amount uint) (cycle uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set distribution-schedule tx-sender
+            {amount: amount, cycle: cycle, last-distribution: block-height})
+        (ok true)))
+
+
+
+(define-map budget-rollovers
+    principal
+    {amount: uint, expiry: uint})
+
+(define-public (rollover-unused-budget (amount uint) (duration uint))
+    (let ((current-budget (unwrap! (get-project-budget tx-sender) ERR-NOT-AUTHORIZED)))
+        (asserts! (<= amount (get balance current-budget)) ERR-INSUFFICIENT-BALANCE)
+        (map-set budget-rollovers tx-sender
+            {amount: amount, expiry: (+ block-height duration)})
+        (map-set budgets tx-sender 
+            {balance: (- (get balance current-budget) amount),
+             performance-score: (get performance-score current-budget)})
+        (ok true)))
+
+
+
+(define-map budget-approval-workflow
+    principal
+    {status: (string-ascii 20), 
+     approver: principal, 
+     requested-amount: uint, 
+     approved-amount: uint})
+
+(define-public (request-budget-approval (amount uint))
+    (begin
+        (map-set budget-approval-workflow tx-sender
+            {status: "pending", 
+             approver: (var-get contract-owner), 
+             requested-amount: amount, 
+             approved-amount: u0})
+        (ok true)))
+
+(define-public (approve-budget-request (project principal) (approved-amount uint))
+    (let ((request (unwrap! (map-get? budget-approval-workflow project) ERR-NOT-AUTHORIZED)))
+        (asserts! (is-eq tx-sender (get approver request)) ERR-NOT-AUTHORIZED)
+        (map-set budget-approval-workflow project
+            {status: "approved", 
+             approver: (get approver request), 
+             requested-amount: (get requested-amount request), 
+             approved-amount: approved-amount})
+        (ok true)))
+
+
+
+(define-map budget-forecasts
+    principal
+    {current-quarter: uint, 
+     next-quarter: uint, 
+     forecast-date: uint})
+
+(define-public (set-budget-forecast (current uint) (next uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set budget-forecasts tx-sender
+            {current-quarter: current, 
+             next-quarter: next, 
+             forecast-date: block-height})
+        (ok true)))
+
+(define-read-only (get-budget-forecast (project principal))
+    (map-get? budget-forecasts project))
+
+
+
+(define-map transfer-limits
+    principal
+    {daily-limit: uint, 
+     transaction-limit: uint, 
+     last-reset: uint, 
+     used-today: uint})
+
+(define-constant ERR-TRANSFER-LIMIT-EXCEEDED (err u105))
+(define-constant BLOCKS-PER-DAY u144)
+
+(define-public (set-transfer-limits (daily uint) (per-tx uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set transfer-limits tx-sender
+            {daily-limit: daily, 
+             transaction-limit: per-tx, 
+             last-reset: block-height, 
+             used-today: u0})
+        (ok true)))
+
+(define-public (check-and-update-transfer-limit (amount uint))
+    (let ((limits (default-to {daily-limit: u0, transaction-limit: u0, last-reset: u0, used-today: u0} 
+                             (map-get? transfer-limits tx-sender))))
+        (asserts! (<= amount (get transaction-limit limits)) ERR-TRANSFER-LIMIT-EXCEEDED)
+        (if (> (- block-height (get last-reset limits)) BLOCKS-PER-DAY)
+            (map-set transfer-limits tx-sender
+                {daily-limit: (get daily-limit limits), 
+                 transaction-limit: (get transaction-limit limits), 
+                 last-reset: block-height, 
+                 used-today: amount})
+            (begin
+                (asserts! (<= (+ amount (get used-today limits)) (get daily-limit limits)) 
+                          ERR-TRANSFER-LIMIT-EXCEEDED)
+                (map-set transfer-limits tx-sender
+                    {daily-limit: (get daily-limit limits), 
+                     transaction-limit: (get transaction-limit limits), 
+                     last-reset: (get last-reset limits), 
+                     used-today: (+ amount (get used-today limits))})))
+        (ok true)))
+
+
+
