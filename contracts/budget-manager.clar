@@ -571,8 +571,10 @@
     (let ((params (unwrap! (map-get? scaling-parameters project) ERR-NOT-AUTHORIZED))
           (current-budget (unwrap! (get-project-budget project) ERR-NOT-AUTHORIZED))
           (performance-multiplier (/ (* (get performance-score current-budget) (get scale-factor params)) SCALE-DENOMINATOR))
-          (new-budget (min (get max-budget params) 
-                         (max (get min-budget params) 
+          (new-budget (if (>= (* (get base-budget params) performance-multiplier) (get max-budget params))
+                         (get max-budget params)
+                         (if (<= (* (get base-budget params) performance-multiplier) (get min-budget params))
+                             (get min-budget params)
                              (* (get base-budget params) performance-multiplier)))))
         (map-set budgets project
             {balance: new-budget,
