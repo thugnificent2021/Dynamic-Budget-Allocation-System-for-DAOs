@@ -538,10 +538,10 @@
         (ok true)))
 
 (define-read-only (get-active-delegation (owner principal))
-    (let ((delegation (map-get? time-locked-delegates owner)))
-        (match delegation
-            delegation
-            (if (> (get expires-at delegation) block-height)
-                (ok delegation)
+    (let ((delegation-data (map-get? time-locked-delegates owner)))
+        (match delegation-data
+            d
+            (if (> (get expires-at d) block-height)
+                (ok d)
                 ERR-EXPIRED-DELEGATION)
             ERR-NOT-AUTHORIZED)))
