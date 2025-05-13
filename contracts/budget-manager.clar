@@ -516,3 +516,32 @@
 
 
 
+
+
+
+(define-map time-locked-delegates
+    principal
+    {delegate: principal,
+     expires-at: uint,
+     permissions: (list 3 (string-ascii 10))})
+
+(define-constant ERR-EXPIRED-DELEGATION (err u106))
+(define-constant ERR-INVALID-DELEGATE (err u107))
+
+(define-public (create-time-locked-delegation (delegate principal) (duration uint) (permissions (list 3 (string-ascii 10))))
+    (begin
+        (asserts! (not (is-eq delegate tx-sender)) ERR-INVALID-DELEGATE)
+        (map-set time-locked-delegates tx-sender
+            {delegate: delegate,
+             expires-at: (+ block-height duration),
+             permissions: permissions})
+        (ok true)))
+
+(define-read-only (get-active-delegation (owner principal))
+    (let ((delegation (map-get? time-locked-delegates owner)))
+        (match delegation
+            delegation
+            (if (> (get expires-at delegation) block-height)
+                (ok delegation)
+                ERR-EXPIRED-DELEGATION)
+            ERR-NOT-AUTHORIZED)))
