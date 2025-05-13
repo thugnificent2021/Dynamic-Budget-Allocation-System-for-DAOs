@@ -545,3 +545,36 @@
                 (ok d)
                 ERR-EXPIRED-DELEGATION)
             ERR-NOT-AUTHORIZED)))
+
+
+(define-map scaling-parameters
+    principal
+    {base-budget: uint,
+     min-budget: uint,
+     max-budget: uint,
+     scale-factor: uint})
+
+(define-constant SCALE-DENOMINATOR u100)
+(define-constant ERR-INVALID-PARAMETERS (err u108))
+
+(define-public (set-scaling-parameters (base uint) (min uint) (max uint) (factor uint))
+    (begin
+        (asserts! (and (>= max base) (>= base min) (<= factor SCALE-DENOMINATOR)) ERR-INVALID-PARAMETERS)
+        (map-set scaling-parameters tx-sender
+            {base-budget: base,
+             min-budget: min,
+             max-budget: max,
+             scale-factor: factor})
+        (ok true)))
+
+(define-public (auto-scale-budget (project principal))
+    (let ((params (unwrap! (map-get? scaling-parameters project) ERR-NOT-AUTHORIZED))
+          (current-budget (unwrap! (get-project-budget project) ERR-NOT-AUTHORIZED))
+          (performance-multiplier (/ (* (get performance-score current-budget) (get scale-factor params)) SCALE-DENOMINATOR))
+          (new-budget (min (get max-budget params) 
+                         (max (get min-budget params) 
+                             (* (get base-budget params) performance-multiplier)))))
+        (map-set budgets project
+            {balance: new-budget,
+             performance-score: (get performance-score current-budget)})
+        (ok true)))
