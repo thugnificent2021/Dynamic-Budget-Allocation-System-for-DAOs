@@ -580,3 +580,154 @@
             {balance: new-budget,
              performance-score: (get performance-score current-budget)})
         (ok true)))
+
+
+(define-constant ERR-COMPLIANCE-VIOLATION (err u109))
+(define-constant ERR-SUSPICIOUS-ACTIVITY (err u110))
+(define-constant ERR-COMPLIANCE-THRESHOLD (err u111))
+
+(define-constant COMPLIANCE-WINDOW u50)
+(define-constant MAX-TRANSACTION-FREQUENCY u10)
+(define-constant SUSPICIOUS-AMOUNT-THRESHOLD u5000)
+(define-constant MIN-COMPLIANCE-SCORE u70)
+
+(define-map compliance-rules
+    (string-ascii 20)
+    {max-single-transaction: uint,
+     max-daily-transactions: uint,
+     required-approval-threshold: uint,
+     enabled: bool})
+
+(define-map compliance-violations
+    {project: principal, violation-id: uint}
+    {violation-type: (string-ascii 30),
+     amount: uint,
+     timestamp: uint,
+     severity: uint,
+     resolved: bool})
+
+(define-map compliance-scores
+    principal
+    {current-score: uint,
+     last-updated: uint,
+     violation-count: uint,
+     total-transactions: uint})
+
+(define-map transaction-monitoring
+    principal
+    {last-transaction: uint,
+     transaction-count-today: uint,
+     largest-transaction: uint,
+     average-transaction: uint,
+     last-reset: uint})
+
+(define-data-var violation-counter uint u0)
+(define-data-var compliance-enabled bool true)
+
+(define-public (setup-compliance-rule (rule-name (string-ascii 20)) (max-single uint) (max-daily uint) (approval-threshold uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (map-set compliance-rules rule-name
+            {max-single-transaction: max-single,
+             max-daily-transactions: max-daily,
+             required-approval-threshold: approval-threshold,
+             enabled: true})
+        (ok true)))
+
+
+
+(define-public (flag-compliance-violation (project principal) (violation-type (string-ascii 30)) (amount uint) (severity uint))
+    (let ((violation-id (var-get violation-counter)))
+        (map-set compliance-violations 
+            {project: project, violation-id: violation-id}
+            {violation-type: violation-type,
+             amount: amount,
+             timestamp: block-height,
+             severity: severity,
+             resolved: false})
+        (var-set violation-counter (+ violation-id u1))
+        
+        (let ((compliance-data (default-to 
+                               {current-score: u100, last-updated: u0, violation-count: u0, total-transactions: u0}
+                               (map-get? compliance-scores project))))
+            (map-set compliance-scores project
+                {current-score: (if (>= (get current-score compliance-data) (* severity u5))
+                                   (- (get current-score compliance-data) (* severity u5))
+                                   u0),
+                 last-updated: block-height,
+                 violation-count: (+ (get violation-count compliance-data) u1),
+                 total-transactions: (get total-transactions compliance-data)}))
+        (ok violation-id)))
+
+(define-public (update-compliance-score (project principal))
+    (let ((compliance-data (default-to 
+                           {current-score: u100, last-updated: u0, violation-count: u0, total-transactions: u0}
+                           (map-get? compliance-scores project)))
+          (monitoring-data (default-to 
+                           {last-transaction: u0, transaction-count-today: u0, largest-transaction: u0, average-transaction: u0, last-reset: u0}
+                           (map-get? transaction-monitoring project)))
+          (time-bonus (if (> (- block-height (get last-updated compliance-data)) COMPLIANCE-WINDOW) u5 u0))
+          (activity-bonus (if (and (> (get total-transactions compliance-data) u0) 
+                                  (is-eq (get violation-count compliance-data) u0)) u10 u0)))
+        
+        (map-set compliance-scores project
+            {current-score: (if (>= (+ (get current-score compliance-data) time-bonus activity-bonus) u100)
+                               u100
+                               (+ (get current-score compliance-data) time-bonus activity-bonus)),
+             last-updated: block-height,
+             violation-count: (get violation-count compliance-data),
+             total-transactions: (+ (get total-transactions compliance-data) u1)})
+        (ok true)))
+
+(define-public (resolve-compliance-violation (project principal) (violation-id uint))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (let ((violation-data (unwrap! (map-get? compliance-violations {project: project, violation-id: violation-id}) ERR-NOT-AUTHORIZED)))
+            (map-set compliance-violations 
+                {project: project, violation-id: violation-id}
+                {violation-type: (get violation-type violation-data),
+                 amount: (get amount violation-data),
+                 timestamp: (get timestamp violation-data),
+                 severity: (get severity violation-data),
+                 resolved: true})
+            
+            (let ((compliance-data (unwrap! (map-get? compliance-scores project) ERR-NOT-AUTHORIZED)))
+                (map-set compliance-scores project
+                    {current-score: (if (>= (+ (get current-score compliance-data) u10) u100)
+                                       u100
+                                       (+ (get current-score compliance-data) u10)),
+                     last-updated: block-height,
+                     violation-count: (if (> (get violation-count compliance-data) u0)
+                                         (- (get violation-count compliance-data) u1)
+                                         u0),
+                     total-transactions: (get total-transactions compliance-data)}))
+            (ok true))))
+
+(define-public (check-compliance-status (project principal))
+    (let ((compliance-data (default-to 
+                           {current-score: u100, last-updated: u0, violation-count: u0, total-transactions: u0}
+                           (map-get? compliance-scores project))))
+        (if (< (get current-score compliance-data) MIN-COMPLIANCE-SCORE)
+            ERR-COMPLIANCE-THRESHOLD
+            (ok (get current-score compliance-data)))))
+
+(define-public (enable-compliance-monitoring (enabled bool))
+    (begin
+        (asserts! (is-eq tx-sender (var-get contract-owner)) ERR-NOT-AUTHORIZED)
+        (var-set compliance-enabled enabled)
+        (ok true)))
+
+(define-read-only (get-compliance-score (project principal))
+    (map-get? compliance-scores project))
+
+(define-read-only (get-compliance-violations (project principal) (violation-id uint))
+    (map-get? compliance-violations {project: project, violation-id: violation-id}))
+
+(define-read-only (get-transaction-monitoring (project principal))
+    (map-get? transaction-monitoring project))
+
+(define-read-only (get-compliance-rule (rule-name (string-ascii 20)))
+    (map-get? compliance-rules rule-name))
+
+(define-read-only (is-compliance-enabled)
+    (var-get compliance-enabled))
