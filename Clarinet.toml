@@ -9,6 +9,16 @@ requirements = []
 path = 'contracts/budget-manager.clar'
 clarity_version = 2
 epoch = 2.5
+
+[contracts.budget-insurance]
+path = 'contracts/budget-insurance.clar'
+clarity_version = 2
+epoch = 2.5
+
+[contracts.budget-governance]
+path = 'contracts/budget-governance.clar'
+clarity_version = 2
+epoch = 2.5
 [repl.analysis]
 passes = ['check_checker']
 
