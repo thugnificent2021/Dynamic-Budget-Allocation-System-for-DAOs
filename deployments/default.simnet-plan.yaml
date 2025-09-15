@@ -54,4 +54,19 @@ plan:
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: "contracts\\budget-manager.clar"
             clarity-version: 2
+        - emulated-contract-publish:
+            contract-name: budget-adjustment
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: "contracts\\budget-adjustment.clar"
+            clarity-version: 2
+        - emulated-contract-publish:
+            contract-name: budget-governance
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: "contracts\\budget-governance.clar"
+            clarity-version: 2
+        - emulated-contract-publish:
+            contract-name: budget-insurance
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: "contracts\\budget-insurance.clar"
+            clarity-version: 2
       epoch: "2.5"
