@@ -50,14 +50,19 @@ plan:
     - id: 0
       transactions:
         - emulated-contract-publish:
-            contract-name: budget-governance
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: "contracts\\budget-governance.clar"
-            clarity-version: 2
-        - emulated-contract-publish:
             contract-name: budget-manager
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: "contracts\\budget-manager.clar"
+            clarity-version: 2
+        - emulated-contract-publish:
+            contract-name: budget-adjustment
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: "contracts\\budget-adjustment.clar"
+            clarity-version: 2
+        - emulated-contract-publish:
+            contract-name: budget-governance
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: "contracts\\budget-governance.clar"
             clarity-version: 2
         - emulated-contract-publish:
             contract-name: budget-insurance
